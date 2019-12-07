@@ -63,8 +63,10 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
 void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities){
 	float total = 0;
 	int i;
+	int temp;
 	for(i = 0; i < cities; i++){
-		fscanf(fp,"%d",&tour[i]);
+		fscanf(fp,"%d",&temp);
+		tour[i] = temp - 1;
 	}
 	tour[cities] = tour[0];
 
@@ -178,11 +180,6 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 				min_cycle[c] = cycle[c];
 			}
 		}
-		// for(i = 0; i < num_cities+1; i++){
-		// 	printf("%d ", cycle[i]);
-		// }
-		//printf("%d \n", min_cost);
-
 	}
 
 	float optimal_cost = get_total_cost(optimal_tour, distances, num_cities);
@@ -228,10 +225,6 @@ float two_opt(unsigned int *cycle, float *distance_array, unsigned int num_citie
 			total_cost = get_total_cost(cycle, distance_array, num_cities);
 			
 			if(total_cost < min_cost){
-				//printf("Cycle starting with %d with cost: %f\n",cycle[0],total_cost);
-				// for(k = 0; k < num_cities+1; k++){
-				// 	printf("%d ", cycle[k]);
-				// }
 				return total_cost;
 			}
 			update_cycle(cycle,i,j);
