@@ -2,101 +2,213 @@
 #include <stdio.h>
 #include <time.h> 
 #include <stdbool.h>
+#include <float.h>
+#include <string.h>
+#include <math.h>
+
 //comment
 #define index(i,j,cities)((i*cities)+j)
 
-int two_opt(unsigned int *cycle, unsigned int *distance_array, unsigned int cities, unsigned int min_cost);
-int travelling_salesman(int *distance_array, int cities, int *min_cycle);
-int get_total_cost(unsigned int *cycle, unsigned int *distance_array, unsigned int cities);
-void copy_array(unsigned int *first, unsigned int *second, int size);
+void read_data(unsigned int cities, float *x_coordinate, float *y_coordinate, FILE *fp);
+void read_line(char *line, int index, float *x_coordinate, float *y_coordinate);
+void get_distances(float *distance, float *x_coordinate, float *y_coordinate, unsigned int cities);
+void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities);
+void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour, unsigned int cities);
+float error_from_optimal(float* distance_array, unsigned int *solution_cycle, unsigned int *optimal_cycle, unsigned int num_cities);
+void write_results(char* filename, float optimal_cost, float solution_cost, float accuracy, float running_time);
+void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour);
+float get_total_cost(unsigned int *cycle, float *distance_array, unsigned int num_cities);
 void swap(unsigned int *cycle, int i, int j);
+void update_cycle(unsigned int *cycle, int i, int j);
+float two_opt(unsigned int *cycle, float *distance_array, unsigned int num_cities, float min_cost);
 
 int main(int argc, char * argv[])
 {
-	if(argc != 3){
-		fprintf(stderr, "usage: tsp cities city_distance_file\n");
+	if(argc != 4){
+		fprintf(stderr, "usage: tsp cities city_distance_file optimum_tour_file\n");
 	}
-	FILE *fp;
-
 	unsigned int cities = (unsigned int) atoi(argv[1]);
-	fp=fopen(argv[2], "r");
-	if(fp == NULL)
-   	{
-      fprintf(stderr, "Error in opening the file with path %s",argv[1]);
-      exit(1);
-   	}
-   	unsigned int *distance_array = (unsigned int *)malloc(cities*cities*sizeof(unsigned int));
-   		
-   	int i;
-   	int j;
-   	unsigned int temp_var;
-   	for(i = 0; i< cities; i++){
-   		for(j = 0; j < cities; j++){
-   			fscanf(fp,"%d",&temp_var);
+	FILE *fp=fopen(argv[2], "r");
+	FILE *fp_optimum=fopen(argv[3], "r");
+	float *distance = (float *)malloc(cities*cities*sizeof(float));
+	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
+	read_files(fp, fp_optimum, distance, tour, cities);
+	tsp_util(cities, distance, tour);
 
-   			distance_array[i*cities + j] = temp_var;
-   		}
-   	}
-
-	printf("Data has been read.\n");
-	unsigned int *cycle = (unsigned int *)malloc((cities+1)*sizeof(unsigned int));
-
-	unsigned int *min_cycle = (unsigned int *)malloc(cities*sizeof(unsigned int *));
-	int min_tour = 1000000;
-	for(j = 0; j < cities; j++){
-		int k = 0;
-		while(k < cities){
-			cycle[k] = (j+k) % cities;
-			k++;
-		}
-		cycle[cities] = j;
-		int min_cost = get_total_cost(cycle, distance_array, cities);
-		while(1){
-			int temp_min = two_opt(cycle, distance_array, cities, min_cost);
-			if(temp_min >= min_cost){
-				break;
-			}else{
-				min_cost = temp_min;
-			}
-		}
-		if(min_cost < min_tour){
-			min_tour = min_cost;
-			int l;
-			for(l = 0; l < cities + 1; l++){
-				min_cycle[l] = cycle[l];
-			}
-		}
-		for(i = 0; i < cities+1; i++){
-			printf("%d ", cycle[i]);
-		}
-		printf("%d \n", min_cost);
-
-	}
-	for(i = 0; i < cities+1; i++){
-		printf("%d ", min_cycle[i]);
-	}
-
-	printf(" %d \n", min_tour);
-	
-	
 }
 
-int get_total_cost(unsigned int *cycle, unsigned int *distance_array, unsigned int cities){
+void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour, unsigned int cities){
+
+	float *x_coordinate = (float *)malloc(cities*sizeof(float));
+	float *y_coordinate = (float *)malloc(cities*sizeof(float));
+	if(fp == NULL){
+      fprintf(stderr, "Error in opening the file");
+      exit(1);
+   	}
+	read_data(cities, x_coordinate, y_coordinate, fp);
+	// float *distance = (float *)malloc(cities*cities*sizeof(float));
+	get_distances(distance, x_coordinate, y_coordinate, cities);
+
+	int i;
+	int j;
+	
+	if(fp == NULL){
+      fprintf(stderr, "Error in opening optimum file");
+      exit(1);
+   	}
+   	// unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
+   	read_optimum_file(fp_optimum, tour, cities);
+}
+
+void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities){
+	float total = 0;
+	int i;
+	for(i = 0; i < cities; i++){
+		fscanf(fp,"%d",&tour[i]);
+	}
+	tour[cities] = tour[0];
+
+}
+
+void get_distances(float *distance, float *x_coordinate, float *y_coordinate, unsigned int cities){
 	int i = 0;
-	int total_cost = 0;
-	for(i = 1; i< cities+1; i++){
-		total_cost = total_cost + distance_array[cycle[i-1]*cities + cycle[i]];
+	int j = 0;
+	float x_diff;
+	float y_diff;
+	for(i = 0; i < cities; i++){
+		for(j = 0; j < cities; j++){
+			x_diff = x_coordinate[i] - x_coordinate[j];
+			y_diff = y_coordinate[i] - y_coordinate[j];
+			distance[index(i,j,cities)] = sqrt(x_diff*x_diff + y_diff*y_diff);
+		}
+	}
+	return;
+}
+
+
+void read_data(unsigned int cities, float *x_coordinate, float *y_coordinate, FILE *fp){
+	
+ 
+   	int i;
+   	ssize_t read;
+   	size_t len = 0;
+   	char * line = NULL;
+   	char *tuples;
+
+   	for(i = 0; i < cities; i++){
+   		read = getline(&line, &len, fp);
+   		if(read == -1){
+   			fprintf(stderr, "Error in reading file");
+      		exit(1);
+   		}
+   		read_line(line, i, x_coordinate, y_coordinate);
+   	}
+   	return;
+}
+
+void read_line(char *line, int index, float *x_coordinate, float *y_coordinate){
+	char *tuples;
+	tuples = strtok(line," ");
+
+	int temp = 0;
+	while (tuples != NULL) {
+    	if(temp == 1){
+    		x_coordinate[index] = (float) atof(tuples);
+    	}
+    	if(temp == 2){
+    		y_coordinate[index] = (float) atof(tuples);
+    	}
+    	tuples = strtok(NULL, " ");
+    	temp++;
+	}
+	return;
+}
+
+
+struct Result{
+	char* filename;
+	float optimal_cost;
+	float solution_cost;
+	float accuracy;
+	float time;
+};
+
+float error_from_optimal(float* distance_array, unsigned int *solution_cycle, unsigned int *optimal_cycle, unsigned int num_cities){
+	float optimal_cost = get_total_cost(optimal_cycle, distance_array, num_cities);
+	float solution_cost = get_total_cost(solution_cycle, distance_array, num_cities);
+	float error = (optimal_cost -  solution_cost)/optimal_cost;
+	float accuracy = 1-error;
+	return accuracy;
+}
+
+void write_results(char* filename, float optimal_cost, float solution_cost, float accuracy, float running_time){
+   FILE *fp;
+   char dest_path[50];
+   strcpy(dest_path,"results/");
+   strcat(dest_path,filename);
+   fp = fopen(dest_path, "w");
+   fprintf(fp, "%s\t%f\t%f\t%f\t%f\n", filename, optimal_cost, solution_cost, accuracy, running_time);
+   fclose(fp);
+}
+
+void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
+	unsigned int *cycle = (unsigned int *)malloc((num_cities+1)*sizeof(unsigned int));
+	unsigned int *min_cycle = (unsigned int *)malloc((num_cities+1)*sizeof(unsigned int));
+	int i, j, c, k;
+	float global_min_tour = FLT_MAX, temp, local_min_tour; 
+	for(j = 0; j < num_cities; j++){
+		k=0;
+		while(k < num_cities){
+			cycle[k] = (j+k) % num_cities;
+			k++;
+		}
+		cycle[num_cities] = j;
+		local_min_tour = get_total_cost(cycle, distances, num_cities);
+		while(1){
+			temp = two_opt(cycle, distances, num_cities, local_min_tour);
+			if(temp >= local_min_tour){
+				break;
+			}else{
+				local_min_tour = temp;
+			}
+		}
+		if(local_min_tour < global_min_tour){
+			global_min_tour = local_min_tour;
+			for(c = 0; c < num_cities + 1; c++){
+				min_cycle[c] = cycle[c];
+			}
+		}
+		// for(i = 0; i < num_cities+1; i++){
+		// 	printf("%d ", cycle[i]);
+		// }
+		//printf("%d \n", min_cost);
+
+	}
+
+	float optimal_cost = get_total_cost(optimal_tour, distances, num_cities);
+	printf("Optimal cost: %f\n", optimal_cost);
+	printf("Solution cost: %f\n", global_min_tour);
+	float accuracy = error_from_optimal(distances,min_cycle,optimal_tour, num_cities);
+	printf("Accuracy: %f\n", accuracy);
+}
+
+
+float get_total_cost(unsigned int *cycle, float *distance_array, unsigned int num_cities){
+	int i = 0;
+	float total_cost = 0;
+	for(i = 1; i< num_cities+1; i++){
+		total_cost = total_cost + distance_array[cycle[i-1]*num_cities + cycle[i]];
 	}
 	return total_cost;
 
 }
 
-void swap(unsigned int *cycle, int first, int second){
-	int temp = cycle[first];
-	cycle[first] = cycle[second];
-	cycle[second] = temp;
+void swap(unsigned int *cycle, int i, int j){
+	unsigned int temp = cycle[i];
+	cycle[i] = cycle[j];
+	cycle[j] = temp;
 }
-int update_cycle(int *cycle, int i, int j){
+void update_cycle(unsigned int *cycle, int i, int j){
 	//reverse i to j
 	while(i < j){
 		swap(cycle, i, j);
@@ -105,31 +217,27 @@ int update_cycle(int *cycle, int i, int j){
 	}
 }
 
-int two_opt(unsigned int *cycle, unsigned int *distance_array, unsigned int cities, unsigned int min_cost){
+float two_opt(unsigned int *cycle, float *distance_array, unsigned int num_cities, float min_cost){
 
-	int i;
-	int j;
-	int temp;
-	int min_i;
-	int min_j;
-	int cost = 0;
-	int total_cost;
-	int temp_cost = min_cost;
-	for(i = 1; i < cities; i++){
-		for(j = i+1; j < cities; j++){
-			//check if cost is reduced by swapping i and j
-			temp_cost = min_cost + distance_array[i*cities+j] + distance_array[(j+1)*cities+i+1] - distance_array[(i)*cities+i+1] - distance_array[(j+1)*cities+j];
-			update_cycle(cycle, i+1, j);
-			total_cost = get_total_cost(cycle, distance_array, cities);
+	int i, j, k;
+    float total_cost;
+	for(i = 1; i < num_cities-1; i++){
+		for(j = i+1; j < num_cities; j++){
+
+			update_cycle(cycle,i,j);
+			total_cost = get_total_cost(cycle, distance_array, num_cities);
 			
 			if(total_cost < min_cost){
+				//printf("Cycle starting with %d with cost: %f\n",cycle[0],total_cost);
+				// for(k = 0; k < num_cities+1; k++){
+				// 	printf("%d ", cycle[k]);
+				// }
 				return total_cost;
 			}
-			update_cycle(cycle, i+1, j);
+			update_cycle(cycle,i,j);
 		}
 	}
 	return min_cost;
 }
-
 
 
