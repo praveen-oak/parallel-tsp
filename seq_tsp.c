@@ -138,7 +138,7 @@ struct Result{
 float error_from_optimal(float* distance_array, unsigned int *solution_cycle, unsigned int *optimal_cycle, unsigned int num_cities){
 	float optimal_cost = get_total_cost(optimal_cycle, distance_array, num_cities);
 	float solution_cost = get_total_cost(solution_cycle, distance_array, num_cities);
-	float error = (optimal_cost -  solution_cost)/optimal_cost;
+	float error = (solution_cost -  optimal_cost)/optimal_cost;
 	float accuracy = 1-error;
 	return accuracy;
 }
@@ -216,21 +216,25 @@ void update_cycle(unsigned int *cycle, int i, int j){
 
 float two_opt(unsigned int *cycle, float *distance_array, unsigned int num_cities, float min_cost){
 
-	int i, j, k;
-    float total_cost;
+	int i, j, k, min_i, min_j;
+    float total_cost=min_cost,temp_cost;
 	for(i = 1; i < num_cities-1; i++){
 		for(j = i+1; j < num_cities; j++){
 
-			update_cycle(cycle,i,j);
-			total_cost = get_total_cost(cycle, distance_array, num_cities);
-			
-			if(total_cost < min_cost){
-				return total_cost;
+			//update_cycle(cycle,i,j);
+			//total_cost = get_total_cost(cycle, distance_array, num_cities);
+			temp_cost = min_cost + distance_array[index(cycle[i],cycle[j+1],num_cities)]+distance_array[index(cycle[i-1],cycle[j],num_cities)]-(distance_array[index(cycle[j],cycle[j+1],num_cities)]+distance_array[index(cycle[i-1],cycle[i],num_cities)]);
+			if(temp_cost < total_cost){
+				// return total_cost;
+				total_cost =temp_cost;
+				min_i=i;
+				min_j=j;
 			}
-			update_cycle(cycle,i,j);
+			//update_cycle(cycle,i,j);
 		}
 	}
-	return min_cost;
+	update_cycle(cycle,min_i,min_j);
+	return total_cost;
 }
 
 
