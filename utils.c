@@ -64,6 +64,18 @@ float get_min_cost(float *cost_array, unsigned int *cycle, unsigned int cities){
 	return min_val;
 }
 
+int get_min_val(float *min_val_array,unsigned int threads){
+	float global_min = FLT_MAX;
+	int min_index;
+	for(int i = 0; i < threads; i++){
+		if(min_val_array[i] < global_min){
+			global_min = min_val_array[i];
+			min_index = i;
+		}
+	}
+	return min_index;
+}
+
 
 void set_min_cost(float *cost_array, unsigned int cities, float value){
 	int i;
@@ -86,5 +98,6 @@ void create_and_copy_int_data(unsigned int *gpu_pointer, unsigned int *cpu_point
 	CUDA_CALL(cudaMemcpy(gpu_pointer, cpu_pointer, size, cudaMemcpyHostToDevice));
 	CUDA_CALL(cudaMemcpy(cpu_pointer, gpu_pointer, size, cudaMemcpyDeviceToHost));
 }
+
 
 
