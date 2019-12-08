@@ -168,7 +168,7 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 		local_min_tour = get_total_cost(cycle, distances, num_cities);
 		while(1){
 			temp = two_opt(cycle, distances, num_cities, local_min_tour);
-			if(temp >= local_min_tour){
+			if(temp +1 >= local_min_tour){
 				break;
 			}else{
 				local_min_tour = temp;
