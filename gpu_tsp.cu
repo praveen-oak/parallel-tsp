@@ -26,26 +26,54 @@ int main(int argc, char * argv[])
 }
 
 
+void seq_two_opt(unsigned int *cycle, float *distance, float *cost_array, unsigned int cities){
+
+	int cost_array_index;
+	int city_i;
+	int city_j;
+	float temp;
+	for(int i = 0; i < cities+1; i++){
+
+		for(int j = 0; j < cities+1; j++){
+
+			cost_array_index = i*(cities+1) + j;
+			// if(i == 9 && j == 10){
+			// 	// printf("Setting %f %d\n",cost_array[cost_array_index], cost_array_index);
+			// 	printf("%f %d \n",distance[cycle[i]*cities + cycle[j+1]], cycle[i]*cities + cycle[j+1]);
+			// 	printf("%f %d \n",distance[cycle[i-1]*cities + cycle[j]], cycle[i-1]*cities + cycle[j]);
+			// 	printf("%f %d\n",distance[cycle[j]*cities + cycle[j+1]], cycle[j]*cities + cycle[j+1]);
+			// 	printf("%f %d \n",distance[cycle[i-1]*cities + cycle[i]], cycle[i-1]*cities + cycle[i]);
+			// }
+			temp = cost_array[cost_array_index];
+			temp = temp + distance[cycle[i]*cities + cycle[j+1]];
+			temp = temp + distance[cycle[i-1]*cities + cycle[j]];
+			temp = temp - distance[cycle[j]*cities + cycle[j+1]];
+			temp = temp - distance[cycle[i-1]*cities + cycle[i]];
+			// if(cost_array_index == 539){
+			// 	printf("setting with %d %d %f %f \n",i,j,temp, cost_array[cost_array_index]);
+			// }
+			cost_array[cost_array_index] = temp;
+		}
+	}
+
+}
+
 
 
 
 __global__ void two_opt(unsigned int *cycle, float *distance, float *cost_array, unsigned int cities){
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	int j = blockIdx.y*blockDim.y + threadIdx.y;
 	int i_stride = blockDim.x*gridDim.x;
 	int j_stride = blockDim.y*gridDim.y;
-
-	unsigned int city_i = cycle[i];
-	unsigned int city_j = cycle[j];
-	unsigned int cost_array_index = index(city_i, city_j, cities);
+	unsigned int cost_array_index;
 
 
-	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + i_stride){
-		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + j_stride){
-			cost_array[cost_array_index] += distance[index(cycle[i], cycle[j+1], cities)];
-			cost_array[cost_array_index] += distance[index(cycle[i-1], cycle[j], cities)];
-			cost_array[cost_array_index] -= distance[index(cycle[j], cycle[j+1], cities)];
-			cost_array[cost_array_index] -= distance[index(cycle[i-1], cycle[i], cities)];
+	for(int i = blockIdx.x*blockDim.x + threadIdx.x; i < cities+1; i = i + i_stride){
+		for(int j = blockIdx.y*blockDim.y + threadIdx.y; j < cities+1; j = j + j_stride){
+			cost_array_index = i*(cities+1) + j;
+			cost_array[cost_array_index] += distance[cycle[i]*cities + cycle[j+1]];
+			cost_array[cost_array_index] += distance[cycle[i-1]*cities + cycle[j]];
+			cost_array[cost_array_index] -= distance[cycle[j]*cities + cycle[j+1]];
+			cost_array[cost_array_index] -= distance[cycle[i-1]*cities + cycle[i]];
 		}
 	}
 }
@@ -62,7 +90,7 @@ __global__ void find_min(float *cost_array, unsigned int cities, float *min_val_
 	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + i_stride){
 		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + j_stride){
 			temp_val = cost_array[i*(cities+1)+j];
-			if(temp_val < min_val){
+			if(temp_val < min_val && i < j){
 				min_i = i;
 				min_j = j;
 				min_val = temp_val;
@@ -76,9 +104,6 @@ __global__ void find_min(float *cost_array, unsigned int cities, float *min_val_
 
 
 void tsp(float *cpu_distance, unsigned int cities){
-	int i;
-	int j;
-
 	//create and assign data to gpu distance array
 	unsigned int distance_size = cities*cities*sizeof(float);
 	// printf("%d \n",distance_size);
@@ -110,8 +135,8 @@ void tsp(float *cpu_distance, unsigned int cities){
 	
 	cudaDeviceSynchronize();
 	
-	dim3 gridDim(16, 16);
-	dim3 blockDim(16, 16);
+	dim3 gridDim(1, 1);
+	dim3 blockDim(1, 1);
 	int total_threads = blockDim.x*blockDim.y*gridDim.x*gridDim.y;
 
 	two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, gpu_cost, cities);
@@ -150,9 +175,12 @@ void tsp(float *cpu_distance, unsigned int cities){
 	cudaDeviceSynchronize();
 
 	int min_index = get_min_val(cpu_min_val,total_threads);
+	printf("min cost = %f \n",cpu_min_val[min_index]);
 	int min_i = cpu_min_i[min_index];
 	int min_j = cpu_min_j[min_index];
 	printf("to swap = %d %d \n",min_i, min_j);
 	update_cycle(cpu_cycle, min_i, min_j);
+	float new_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
+	printf("new cost = %f \n",new_cost);
 
 }
