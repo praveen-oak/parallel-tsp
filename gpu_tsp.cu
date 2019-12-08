@@ -104,46 +104,29 @@ __global__ void find_min(float *cost_array, unsigned int cities, float *min_val_
 
 
 void tsp(float *cpu_distance, unsigned int cities){
+
+	dim3 gridDim(1, 1);
+	dim3 blockDim(1, 1);
+
+
 	//create and assign data to gpu distance array
 	unsigned int distance_size = cities*cities*sizeof(float);
 	// printf("%d \n",distance_size);
 	float *gpu_distance;
-	
+	int total_threads = blockDim.x*blockDim.y*gridDim.x*gridDim.y;
+	int min_index;
 	CUDA_CALL(cudaMalloc(&gpu_distance, distance_size));
 	CUDA_CALL(cudaMemcpy(gpu_distance, cpu_distance, distance_size, cudaMemcpyHostToDevice));
 	CUDA_CALL(cudaMemcpy(cpu_distance, gpu_distance, distance_size, cudaMemcpyDeviceToHost));
 
+	unsigned int cost_size = (cities+1)*(cities+1)*sizeof(float);
+	float *cpu_cost = (float *)malloc(cost_size); 
+	float *gpu_cost;
+	CUDA_CALL(cudaMalloc(&gpu_cost, cost_size));
 	
 	unsigned int cycle_size = (cities+1)*sizeof(unsigned int);
 	unsigned int *cpu_cycle = (unsigned int *)malloc(cycle_size);
 	allocate_cycle(cpu_cycle, 0, cities);
-	unsigned int *gpu_cycle;
-	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
-	CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-	CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
-
-	float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-	unsigned int cost_size = (cities+1)*(cities+1)*sizeof(float);
-	float *cpu_cost = (float *)malloc(cost_size); 
-	set_min_cost(cpu_cost, cities, temp_cost);
-
-	float *gpu_cost;
-	CUDA_CALL(cudaMalloc(&gpu_cost, cost_size));
-	CUDA_CALL(cudaMemcpy(gpu_cost, cpu_cost, cost_size, cudaMemcpyHostToDevice));
-	CUDA_CALL(cudaMemcpy(cpu_cost, gpu_cost, cost_size, cudaMemcpyDeviceToHost));
-
-	
-	cudaDeviceSynchronize();
-	
-	dim3 gridDim(1, 1);
-	dim3 blockDim(1, 1);
-	int total_threads = blockDim.x*blockDim.y*gridDim.x*gridDim.y;
-
-	two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, gpu_cost, cities);
-	CUDA_CALL(cudaMemcpy(cpu_cost, gpu_cost, cost_size, cudaMemcpyDeviceToHost));
-	cudaDeviceSynchronize();
-	//2-opt costs have been calculated
-
 
 	float *cpu_min_val = (float *)malloc(total_threads*sizeof(float));
 	float *gpu_min_val;
@@ -157,30 +140,55 @@ void tsp(float *cpu_distance, unsigned int cities){
 	int *gpu_min_j;
 	CUDA_CALL(cudaMalloc(&gpu_min_j, total_threads*sizeof(int)));
 
-	CUDA_CALL(cudaMemset(gpu_min_val, 0, total_threads*sizeof(float)));
-	CUDA_CALL(cudaMemset(gpu_min_i,0, total_threads*sizeof(int)));
-	CUDA_CALL(cudaMemset(gpu_min_j, 0, total_threads*sizeof(int)));
-	memset(cpu_min_val, 0, total_threads*sizeof(float));
-	memset(cpu_min_i, 0, total_threads*sizeof(int));
-	memset(cpu_min_j, 0, total_threads*sizeof(int));
+
+	unsigned int *gpu_cycle;
+	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
+	
+	while(true){
+		float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
+		set_min_cost(cpu_cost, cities, temp_cost);
+		CUDA_CALL(cudaMemcpy(gpu_cost, cpu_cost, cost_size, cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(cpu_cost, gpu_cost, cost_size, cudaMemcpyDeviceToHost));
+		CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
+
+		cudaDeviceSynchronize();
+
+		
+
+		two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, gpu_cost, cities);
+		CUDA_CALL(cudaMemcpy(cpu_cost, gpu_cost, cost_size, cudaMemcpyDeviceToHost));
+		cudaDeviceSynchronize();
+		//2-opt costs have been calculated
+
+		CUDA_CALL(cudaMemset(gpu_min_val, 0, total_threads*sizeof(float)));
+		CUDA_CALL(cudaMemset(gpu_min_i,0, total_threads*sizeof(int)));
+		CUDA_CALL(cudaMemset(gpu_min_j, 0, total_threads*sizeof(int)));
+		memset(cpu_min_val, 0, total_threads*sizeof(float));
+		memset(cpu_min_i, 0, total_threads*sizeof(int));
+		memset(cpu_min_j, 0, total_threads*sizeof(int));
+		cudaDeviceSynchronize();
 
 
-	cudaDeviceSynchronize();
+		find_min<<<gridDim, blockDim>>>(gpu_cost, cities, gpu_min_val, gpu_min_i, gpu_min_j);
+		cudaDeviceSynchronize();
 
-	find_min<<<gridDim, blockDim>>>(gpu_cost, cities, gpu_min_val, gpu_min_i, gpu_min_j);
-	cudaDeviceSynchronize();
-	CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-	CUDA_CALL(cudaMemcpy(cpu_min_i, gpu_min_i, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-	CUDA_CALL(cudaMemcpy(cpu_min_j, gpu_min_j, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-	cudaDeviceSynchronize();
+		CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
+		CUDA_CALL(cudaMemcpy(cpu_min_i, gpu_min_i, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
+		CUDA_CALL(cudaMemcpy(cpu_min_j, gpu_min_j, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
+		cudaDeviceSynchronize();
 
-	int min_index = get_min_val(cpu_min_val,total_threads);
-	printf("min cost = %f \n",cpu_min_val[min_index]);
-	int min_i = cpu_min_i[min_index];
-	int min_j = cpu_min_j[min_index];
-	printf("to swap = %d %d \n",min_i, min_j);
-	update_cycle(cpu_cycle, min_i, min_j);
-	float new_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-	printf("new cost = %f \n",new_cost);
+		min_index = get_min_val(cpu_min_val,total_threads);
+		if(cpu_min_val[min_index] +1 >= temp_cost){
+			// printf("%f %f ",cpu_min_val[min_index], temp_cost);
+			break;
+		}
+		else{
+			int min_i = cpu_min_i[min_index];
+			int min_j = cpu_min_j[min_index];
+			update_cycle(cpu_cycle, min_i, min_j);
+		}
+	}
+	printf("min cost = %f\n",cpu_min_val[min_index]);
 
 }
