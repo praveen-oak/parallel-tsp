@@ -4,6 +4,11 @@
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
+#define THREADS_X 32
+#define THREADS_Y 32
+
+#define BLOCKS_X 32
+#define BLOCKS_Y 32
 
 
 
@@ -26,6 +31,8 @@ int main(int argc, char * argv[])
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, int* min_index_array){
+	__shared__ float temp_min[THREADS_Y*THREADS_X];
+	__shared__ float temp_min_index[THREADS_Y*THREADS_X];
 	float min_val = FLT_MAX;
 	float temp_val;
 	float min_index = -1;
@@ -41,17 +48,35 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 			}
 		}
 	}
-	int threadId = (blockIdx.x*blockDim.x + threadIdx.x)*blockDim.x*gridDim.x + (blockIdx.y*blockDim.y + threadIdx.y);
-	min_val_array[threadId] = min_val;
-	min_index_array[threadId] = min_index;
+
+
+	//total threads in each block = blockDim.x*blockDim.y
+	//id of thread in block = threadIdx.x*blockDim.x + threadIdx.y
+	int tid =  threadIdx.x*blockDim.x + threadIdx.y;
+	int bid = blockIdx.x*gridDim.x + blockIdx.y;
+
+	temp_min[tid] = min_val;
+	temp_min_index[tid] = min_index;
+
+	for(unsigned int stride = 1; stride < blockDim.x*blockDim.y; stride*=2){
+		__syncthreads();
+		if(tid %(2*stride) == 0){
+			if(temp_min[tid] > temp_min[tid+stride]){
+				temp_min[tid] = temp_min[tid+stride];
+				temp_min_index[tid] = temp_min_index[tid+stride];
+			}
+		}
+	}
+	
+	min_index_array[bid] = temp_min_index[0];
+	min_val_array[bid] = temp_min[0];
 }
 
 
 void tsp(float *cpu_distance, unsigned int cities){
 
-	dim3 gridDim(16, 16);
-	dim3 blockDim(16, 16);
-	int total_threads = blockDim.x*blockDim.y*gridDim.x*gridDim.y;
+	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
+	dim3 blockDim(THREADS_X, THREADS_Y);
 
 	//create and assign data to gpu distance array
 	unsigned int distance_size = cities*cities*sizeof(float);
@@ -62,17 +87,18 @@ void tsp(float *cpu_distance, unsigned int cities){
 	CUDA_CALL(cudaMalloc(&gpu_distance, distance_size));
 	CUDA_CALL(cudaMemcpy(gpu_distance, cpu_distance, distance_size, cudaMemcpyHostToDevice));
 	
-	float *cpu_min_val = (float *)malloc(total_threads*sizeof(float));
+	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
 	float *gpu_min_val;
-	CUDA_CALL(cudaMalloc(&gpu_min_val, total_threads*sizeof(float)));
+	CUDA_CALL(cudaMalloc(&gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float)));
 
-	int *cpu_min_index = (int *)malloc(total_threads*sizeof(int));
+	int *cpu_min_index = (int *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(int));
 	int *gpu_min_index;
-	CUDA_CALL(cudaMalloc(&gpu_min_index, total_threads*sizeof(int)));
+	CUDA_CALL(cudaMalloc(&gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(int)));
 	
 
 	unsigned int cycle_size = (cities+1)*sizeof(unsigned int);
 	unsigned int *cpu_cycle = (unsigned int *)malloc(cycle_size);
+	unsigned int *global_optimal_cycle = (unsigned int *)malloc(cycle_size);
 	unsigned int *gpu_cycle;
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
@@ -85,20 +111,20 @@ void tsp(float *cpu_distance, unsigned int cities){
 			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
 			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
-			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
+			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
+			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
 			//2-opt costs have been calculated
 
-			min_index = get_min_val(cpu_min_val,total_threads);
+			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
 			if(cpu_min_val[min_index] >= -0.001){
 				if(global_minima > temp_cost){
 					global_minima = temp_cost;
+					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
 				}
 				break;
 			}
 			else{
-				// printf("%f \n",)
 				int min_agg_index = cpu_min_index[min_index];
 				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
 			}
