@@ -8,18 +8,16 @@
 #define THREADS_X 16
 #define THREADS_Y 16
 
-#define BLOCKS_X 32
-#define BLOCKS_Y 32
-#define STREAMS 8;
+#define BLOCKS_X 64
+#define BLOCKS_Y 64
 
-
+int devices = 0;
 struct arg_struct {
     float *cpu_distance;
-    float *gpu_distance_pointer;
+    float *gpu_distance;
     unsigned int cities;
     float *return_pointer;
-    int stream_index;
-    cudaStream_t stream;
+    int device_index;
 };
 
 void *tsp(void *arguements);
@@ -37,33 +35,49 @@ int main(int argc, char * argv[])
 	float *distance = (float *)malloc(distance_array_size);
 	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
 	read_files(fp, fp_optimum, distance, tour, cities);	
+	fclose(fp);
+	fclose(fp_optimum);
 
 	struct arg_struct args[8];
 	pthread_t stream_threads[8];
-	cudaStream_t streams[8];
 
+	CUDA_CALL(cudaGetDeviceCount (&devices));
 	float *gpu_distance;
-	CUDA_CALL(cudaMalloc(&gpu_distance, distance_array_size));
-	CUDA_CALL(cudaMemcpy(gpu_distance, distance, distance_array_size, cudaMemcpyHostToDevice));
-	cudaDeviceSynchronize();
 
-	for(int i = 0; i < 8; i++){
+
+	for(int i = 0; i < devices; i++){
+
+		CUDA_CALL(cudaSetDevice(i));
+		
+		CUDA_CALL(cudaMalloc(&gpu_distance, distance_array_size));
+		CUDA_CALL(cudaMemcpy(gpu_distance, distance, distance_array_size, cudaMemcpyHostToDevice));
+		cudaDeviceSynchronize();
+
 		args[i].cpu_distance = distance;
 		args[i].cities = cities;
-		args[i].gpu_distance_pointer= gpu_distance;
-		cudaStreamCreate(&streams[i]);
-		args[i].stream = streams[i];
-		args[i].stream_index = i;
-
+		args[i].gpu_distance= gpu_distance;
+		args[i].return_pointer = (float *)malloc(sizeof(float));
+		args[i].device_index = i;
 		if (pthread_create(&stream_threads[i], NULL, &tsp, (void *)&args[i]) != 0) {
-        	printf("Uh-oh!\n");
+        	printf("Error in creating threads, exiting program\n");
         	return -1;
     	}
     	
 	}
-	for(int i = 0; i < 8; i++){
+	for(int i = 0; i < devices; i++){
 		pthread_join(stream_threads[i], NULL);	
 	}
+	float min_val = FLT_MAX;
+	for(int i = 0; i < devices; i++){
+		if(args[i].return_pointer[0] < min_val){
+			min_val = args[i].return_pointer[0];
+		}
+	}
+	printf("Global minimum value is %f\n",min_val);
+	free(distance);
+	free(tour);
+	cudaFree(gpu_distance);
+
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, unsigned int* min_index_array){
@@ -113,17 +127,15 @@ void *tsp(void *arguments){
 	struct arg_struct *args = (struct arg_struct *)arguments;
 
 
-	float *gpu_distance = args -> gpu_distance_pointer;
+	float *gpu_distance = args -> gpu_distance;
 	float *cpu_distance = args -> cpu_distance; 
 	unsigned int cities = args -> cities;
 	float *return_pointer = args -> return_pointer;
-	int stream_index = args -> stream_index;
-	cudaStream_t stream = args -> stream;
+	int device_index = args -> device_index;
+	CUDA_CALL(cudaSetDevice(device_index));
 
 	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
 	dim3 blockDim(THREADS_X, THREADS_Y);
-
-	// printf("Starting for stream = %d\n", stream_index);
 	int min_index;
 	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
 	float *gpu_min_val;
@@ -141,20 +153,20 @@ void *tsp(void *arguments){
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
 	float global_minima = FLT_MAX;
-	for(int i = 0; i < 1; i = i + 8){
+	for(int i = device_index; i < cities; i = i + devices){
 		allocate_cycle(cpu_cycle, i, cities);
 
 		while(true){
 			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
 			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim, 0>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
 			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-			if(cpu_min_val[min_index] >= -0.01){
+			if(cpu_min_val[min_index] >= -0.001){
 				if(global_minima > temp_cost){
 					global_minima = temp_cost;
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
@@ -167,8 +179,16 @@ void *tsp(void *arguments){
 			}
 		}
 	}
-	printf("global minima = %f\n",global_minima);
-	// return_pointer[0] = global_minima;
+	return_pointer[0] = global_minima;
+
+	cudaFree(gpu_min_val);
+	cudaFree(gpu_min_index);
+	cudaFree(gpu_cycle);
+
+	free(cpu_cycle);
+	free(cpu_min_val);
+	free(cpu_min_index);
+
     return NULL;
 	
 }
