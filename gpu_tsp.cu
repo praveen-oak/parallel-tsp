@@ -4,8 +4,8 @@
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
-#define THREADS_X 32
-#define THREADS_Y 32
+#define THREADS_X 16
+#define THREADS_Y 16
 
 #define BLOCKS_X 32
 #define BLOCKS_Y 32
@@ -117,7 +117,7 @@ void tsp(float *cpu_distance, unsigned int cities){
 			//2-opt costs have been calculated
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-			if(cpu_min_val[min_index] >= -0.001){
+			if(cpu_min_val[min_index] >= -0.01){
 				if(global_minima > temp_cost){
 					global_minima = temp_cost;
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
