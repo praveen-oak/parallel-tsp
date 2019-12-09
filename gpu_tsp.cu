@@ -1,6 +1,7 @@
 #include "file_io.c"
 #include "utils.c"
 #include <assert.h>
+#include <pthread.h>
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
@@ -14,13 +15,14 @@
 
 struct arg_struct {
     float *cpu_distance;
+    float *gpu_distance_pointer;
     unsigned int cities;
-    // unsigned int stream;
     float *return_pointer;
+    int stream_index;
     cudaStream_t stream;
 };
 
-void tsp(void *arguements);
+void *tsp(void *arguements);
 int main(int argc, char * argv[])
 {
 	if(argc != 4){
@@ -37,9 +39,31 @@ int main(int argc, char * argv[])
 	read_files(fp, fp_optimum, distance, tour, cities);	
 
 	struct arg_struct args[8];
-	args[0].cpu_distance = distance;
-	args[0].cities = cities;
-	tsp(&args[0]);
+	pthread_t stream_threads[8];
+	cudaStream_t streams[8];
+
+	float *gpu_distance;
+	CUDA_CALL(cudaMalloc(&gpu_distance, distance_array_size));
+	CUDA_CALL(cudaMemcpy(gpu_distance, distance, distance_array_size, cudaMemcpyHostToDevice));
+	cudaDeviceSynchronize();
+
+	for(int i = 0; i < 8; i++){
+		args[i].cpu_distance = distance;
+		args[i].cities = cities;
+		args[i].gpu_distance_pointer= gpu_distance;
+		cudaStreamCreate(&streams[i]);
+		args[i].stream = streams[i];
+		args[i].stream_index = i;
+
+		if (pthread_create(&stream_threads[i], NULL, &tsp, (void *)&args[i]) != 0) {
+        	printf("Uh-oh!\n");
+        	return -1;
+    	}
+    	
+	}
+	for(int i = 0; i < 8; i++){
+		pthread_join(stream_threads[i], NULL);	
+	}
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, unsigned int* min_index_array){
@@ -84,30 +108,23 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	min_val_array[bid] = temp_min[0];
 }
 
-void tsp(void *arguments){
+void *tsp(void *arguments){
 
 	struct arg_struct *args = (struct arg_struct *)arguments;
 
 
-
+	float *gpu_distance = args -> gpu_distance_pointer;
 	float *cpu_distance = args -> cpu_distance; 
 	unsigned int cities = args -> cities;
+	float *return_pointer = args -> return_pointer;
+	int stream_index = args -> stream_index;
 	cudaStream_t stream = args -> stream;
 
 	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
 	dim3 blockDim(THREADS_X, THREADS_Y);
+
+	// printf("Starting for stream = %d\n", stream_index);
 	int min_index;
-	//create and assign data to gpu distance array
-	unsigned int distance_size = cities*cities*sizeof(float);
-	float *gpu_distance;
-
-
-	CUDA_CALL(cudaMalloc(&gpu_distance, distance_size));
-	CUDA_CALL(cudaMemcpy(gpu_distance, cpu_distance, distance_size, cudaMemcpyHostToDevice));
-	
-
-
-	
 	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
 	float *gpu_min_val;
 	CUDA_CALL(cudaMalloc(&gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float)));
@@ -123,22 +140,18 @@ void tsp(void *arguments){
 	unsigned int *gpu_cycle;
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
-
-	// tsp_serial(cpu_distance, gpu_distance, cpu_cycle, gpu_cycle, cpu_min_val, gpu_min_val,cpu_min_index, gpu_min_index, cities, 0);
-
 	float global_minima = FLT_MAX;
-	for(int i = 0; i< 1; i++){
+	for(int i = 0; i < 1; i = i + 8){
 		allocate_cycle(cpu_cycle, i, cities);
 
 		while(true){
 			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
 			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
+			two_opt<<<gridDim, blockDim, 0>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
 			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
-			//2-opt costs have been calculated
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
 			if(cpu_min_val[min_index] >= -0.01){
@@ -155,4 +168,7 @@ void tsp(void *arguments){
 		}
 	}
 	printf("global minima = %f\n",global_minima);
+	// return_pointer[0] = global_minima;
+    return NULL;
+	
 }
