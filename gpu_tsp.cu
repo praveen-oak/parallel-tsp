@@ -9,10 +9,18 @@
 
 #define BLOCKS_X 32
 #define BLOCKS_Y 32
+#define STREAMS 8;
 
 
+struct arg_struct {
+    float *cpu_distance;
+    unsigned int cities;
+    // unsigned int stream;
+    float *return_pointer;
+    cudaStream_t stream;
+};
 
-void tsp(float *distance, unsigned int cities);
+void tsp(void *arguements);
 int main(int argc, char * argv[])
 {
 	if(argc != 4){
@@ -27,7 +35,11 @@ int main(int argc, char * argv[])
 	float *distance = (float *)malloc(distance_array_size);
 	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
 	read_files(fp, fp_optimum, distance, tour, cities);	
-	tsp(distance, cities);
+
+	struct arg_struct args[8];
+	args[0].cpu_distance = distance;
+	args[0].cities = cities;
+	tsp(&args[0]);
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, unsigned int* min_index_array){
@@ -72,46 +84,19 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	min_val_array[bid] = temp_min[0];
 }
 
-void tsp_serial(float *cpu_distance, float *gpu_distance, unsigned int *cpu_cycle, unsigned int *gpu_cycle, float *cpu_min_val, float *gpu_min_val, unsigned int *cpu_min_index, unsigned int *gpu_min_index, unsigned int cities, unsigned int i){
+void tsp(void *arguments){
+
+	struct arg_struct *args = (struct arg_struct *)arguments;
+
+
+
+	float *cpu_distance = args -> cpu_distance; 
+	unsigned int cities = args -> cities;
+	cudaStream_t stream = args -> stream;
+
 	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
 	dim3 blockDim(THREADS_X, THREADS_Y);
 	int min_index;
-	unsigned int cycle_size = (cities+1)*sizeof(unsigned int);
-	float global_minima = FLT_MAX;
-
-	allocate_cycle(cpu_cycle, i, cities);
-
-	while(true){
-		float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-		CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-		two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
-
-		CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-		CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-		cudaDeviceSynchronize();
-		//2-opt costs have been calculated
-
-		min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-		if(cpu_min_val[min_index] >= -0.01){
-			if(global_minima > temp_cost){
-				global_minima = temp_cost;
-				// memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
-			}
-			break;
-		}
-		else{
-			int min_agg_index = cpu_min_index[min_index];
-			update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
-		}
-	}
-	printf("global minima = %f\n",global_minima);
-}
-
-void tsp(float *cpu_distance, unsigned int cities){
-
-	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
-	dim3 blockDim(THREADS_X, THREADS_Y);
-
 	//create and assign data to gpu distance array
 	unsigned int distance_size = cities*cities*sizeof(float);
 	float *gpu_distance;
@@ -139,35 +124,35 @@ void tsp(float *cpu_distance, unsigned int cities){
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
 
-	tsp_serial(cpu_distance, gpu_distance, cpu_cycle, gpu_cycle, cpu_min_val, gpu_min_val,cpu_min_index, gpu_min_index, cities, 0);
+	// tsp_serial(cpu_distance, gpu_distance, cpu_cycle, gpu_cycle, cpu_min_val, gpu_min_val,cpu_min_index, gpu_min_index, cities, 0);
 
-	// float global_minima = FLT_MAX;
-	// for(int i = 0; i< 1; i++){
-	// 	allocate_cycle(cpu_cycle, i, cities);
+	float global_minima = FLT_MAX;
+	for(int i = 0; i< 1; i++){
+		allocate_cycle(cpu_cycle, i, cities);
 
-	// 	while(true){
-	// 		float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-	// 		CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-	// 		two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
+		while(true){
+			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
+			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
-	// 		CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-	// 		CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-	// 		cudaDeviceSynchronize();
-	// 		//2-opt costs have been calculated
+			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
+			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
+			cudaDeviceSynchronize();
+			//2-opt costs have been calculated
 
-	// 		min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-	// 		if(cpu_min_val[min_index] >= -0.01){
-	// 			if(global_minima > temp_cost){
-	// 				global_minima = temp_cost;
-	// 				memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
-	// 			}
-	// 			break;
-	// 		}
-	// 		else{
-	// 			int min_agg_index = cpu_min_index[min_index];
-	// 			update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
-	// 		}
-	// 	}
-	// }
-	// printf("global minima = %f\n",global_minima);
+			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
+			if(cpu_min_val[min_index] >= -0.01){
+				if(global_minima > temp_cost){
+					global_minima = temp_cost;
+					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
+				}
+				break;
+			}
+			else{
+				int min_agg_index = cpu_min_index[min_index];
+				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
+			}
+		}
+	}
+	printf("global minima = %f\n",global_minima);
 }
