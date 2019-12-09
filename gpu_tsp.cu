@@ -25,47 +25,10 @@ int main(int argc, char * argv[])
 	tsp(distance, cities);
 }
 
-
-// void seq_two_opt(unsigned int *cycle, float *distance, float *cost_array, unsigned int cities){
-
-// 	int cost_array_index;
-// 	int city_i;
-// 	int city_j;
-// 	float temp;
-// 	for(int i = 0; i < cities+1; i++){
-
-// 		for(int j = 0; j < cities+1; j++){
-
-// 			cost_array_index = i*(cities+1) + j;
-// 			// if(i == 9 && j == 10){
-// 			// 	// printf("Setting %f %d\n",cost_array[cost_array_index], cost_array_index);
-// 			// 	printf("%f %d \n",distance[cycle[i]*cities + cycle[j+1]], cycle[i]*cities + cycle[j+1]);
-// 			// 	printf("%f %d \n",distance[cycle[i-1]*cities + cycle[j]], cycle[i-1]*cities + cycle[j]);
-// 			// 	printf("%f %d\n",distance[cycle[j]*cities + cycle[j+1]], cycle[j]*cities + cycle[j+1]);
-// 			// 	printf("%f %d \n",distance[cycle[i-1]*cities + cycle[i]], cycle[i-1]*cities + cycle[i]);
-// 			// }
-// 			temp = cost_array[cost_array_index];
-// 			temp = temp + distance[cycle[i]*cities + cycle[j+1]];
-// 			temp = temp + distance[cycle[i-1]*cities + cycle[j]];
-// 			temp = temp - distance[cycle[j]*cities + cycle[j+1]];
-// 			temp = temp - distance[cycle[i-1]*cities + cycle[i]];
-// 			// if(cost_array_index == 539){
-// 			// 	printf("setting with %d %d %f %f \n",i,j,temp, cost_array[cost_array_index]);
-// 			// }
-// 			cost_array[cost_array_index] = temp;
-// 		}
-// 	}
-
-// }
-
-
-
-
-__global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, int* min_i_array, int* min_j_array){
+__global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, int* min_index_array){
 	float min_val = FLT_MAX;
 	float temp_val;
-	float min_i = -1;
-	float min_j = -1;
+	float min_index = -1;
 	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + blockDim.x*gridDim.x){
 		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
 			temp_val = distance[cycle[i]*cities + cycle[j+1]];
@@ -74,40 +37,13 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 			temp_val -= distance[cycle[i-1]*cities + cycle[i]];
 			if(temp_val < min_val && i < j){
 				min_val = temp_val;
-				min_i = i;
-				min_j = j;
+				min_index = i*cities+j;
 			}
 		}
 	}
 	int threadId = (blockIdx.x*blockDim.x + threadIdx.x)*blockDim.x*gridDim.x + (blockIdx.y*blockDim.y + threadIdx.y);
 	min_val_array[threadId] = min_val;
-	min_i_array[threadId] = min_i;
-	min_j_array[threadId] = min_j;
-
-}
-
-__global__ void find_min(float *cost_array, unsigned int cities, float *min_val_array, int* min_i_array, int* min_j_array){
-
-	int i_stride = blockDim.x*gridDim.x;
-	int j_stride = blockDim.y*gridDim.y;
-	int threadId = (blockIdx.x*blockDim.x + threadIdx.x)*i_stride + (blockIdx.y*blockDim.y + threadIdx.y);
-	float min_val = FLT_MAX;
-	float temp_val = FLT_MAX;
-	int min_i;
-	int min_j;
-	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + i_stride){
-		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + j_stride){
-			temp_val = cost_array[i*(cities+1)+j];
-			if(temp_val < min_val && i < j){
-				min_i = i;
-				min_j = j;
-				min_val = temp_val;
-			}
-		}
-	}
-	min_val_array[threadId] = min_val;
-	min_i_array[threadId] = min_i;
-	min_j_array[threadId] = min_j;
+	min_index_array[threadId] = min_index;
 }
 
 
@@ -130,13 +66,9 @@ void tsp(float *cpu_distance, unsigned int cities){
 	float *gpu_min_val;
 	CUDA_CALL(cudaMalloc(&gpu_min_val, total_threads*sizeof(float)));
 
-	int *cpu_min_i = (int *)malloc(total_threads*sizeof(int));
-	int *gpu_min_i;
-	CUDA_CALL(cudaMalloc(&gpu_min_i, total_threads*sizeof(int)));
-
-	int *cpu_min_j = (int *)malloc(total_threads*sizeof(int));
-	int *gpu_min_j;
-	CUDA_CALL(cudaMalloc(&gpu_min_j, total_threads*sizeof(int)));
+	int *cpu_min_index = (int *)malloc(total_threads*sizeof(int));
+	int *gpu_min_index;
+	CUDA_CALL(cudaMalloc(&gpu_min_index, total_threads*sizeof(int)));
 	
 
 	unsigned int cycle_size = (cities+1)*sizeof(unsigned int);
@@ -151,16 +83,10 @@ void tsp(float *cpu_distance, unsigned int cities){
 		while(true){
 			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
 			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-
-			CUDA_CALL(cudaMemset(gpu_min_val, 0, total_threads*sizeof(float)));
-			CUDA_CALL(cudaMemset(gpu_min_i,0, total_threads*sizeof(int)));
-			CUDA_CALL(cudaMemset(gpu_min_j, 0, total_threads*sizeof(int)));
-
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_i, gpu_min_j);
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
 			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-			CUDA_CALL(cudaMemcpy(cpu_min_i, gpu_min_i, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
-			CUDA_CALL(cudaMemcpy(cpu_min_j, gpu_min_j, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
+			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, total_threads*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
 			//2-opt costs have been calculated
 
@@ -173,9 +99,8 @@ void tsp(float *cpu_distance, unsigned int cities){
 			}
 			else{
 				// printf("%f \n",)
-				int min_i = cpu_min_i[min_index];
-				int min_j = cpu_min_j[min_index];
-				update_cycle(cpu_cycle, min_i, min_j);
+				int min_agg_index = cpu_min_index[min_index];
+				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
 			}
 		}
 	}
