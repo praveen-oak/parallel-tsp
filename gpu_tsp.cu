@@ -73,7 +73,7 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	//only the first thread will do swaps
 	if(tid == 0){
 		i = temp_min_index[0]/cities;
-		j = temp_min_index[0]%cities;
+		j = temp_min_index[0] - cities*i;
 		while(i < j){
 			temp = cycle[i];
 			cycle[i] = cycle[j];
@@ -124,6 +124,7 @@ void tsp(float *cpu_distance, unsigned int cities){
 				CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
 				local_minima = get_total_cost(cpu_cycle, cpu_distance, cities);
 				if(global_minima > local_minima){
+					global_minima = local_minima;
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
 				}
 				break;
