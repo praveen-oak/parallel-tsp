@@ -103,7 +103,7 @@ void tsp(float *cpu_distance, unsigned int cities){
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
 	float global_minima = FLT_MAX;
-	for(int i = 0; i< cities; i++){
+	for(int i = 0; i< 1; i++){
 		allocate_cycle(cpu_cycle, i, cities);
 
 		while(true){

@@ -36,7 +36,7 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
       exit(1);
    	}
    	// unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
-   	read_optimum_file(fp_optimum, tour, cities);
+   	// read_optimum_file(fp_optimum, tour, cities);
 }
 
 void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities){
