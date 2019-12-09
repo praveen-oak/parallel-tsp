@@ -5,11 +5,11 @@
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
-#define THREADS_X 16
-#define THREADS_Y 16
+#define THREADS_X 32
+#define THREADS_Y 32
 
-#define BLOCKS_X 64
-#define BLOCKS_Y 64
+#define BLOCKS_X 32
+#define BLOCKS_Y 32
 
 int devices = 0;
 struct arg_struct {
