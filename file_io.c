@@ -19,7 +19,7 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
 
 
 
-void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour, unsigned int cities){
+void read_files(FILE *fp, FILE *fp_optimum, float *distance, float *co_ordinates, unsigned int *tour, unsigned int cities){
 
 	float *x_coordinate = (float *)malloc(cities*sizeof(float));
 	float *y_coordinate = (float *)malloc(cities*sizeof(float));
@@ -29,7 +29,12 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
    	}
 	read_data(cities, x_coordinate, y_coordinate, fp);
 	// float *distance = (float *)malloc(cities*cities*sizeof(float));
-	get_distances(distance, x_coordinate, y_coordinate, cities);
+
+	for(int i = 0; i < cities; i++){
+		co_ordinates[2*i+0] = x_coordinate[i];
+		co_ordinates[2*i+1] = y_coordinate[i];
+	}
+	// get_distances(distance, x_coordinate, y_coordinate, cities);
 	
 	if(fp == NULL){
       fprintf(stderr, "Error in opening optimum file");

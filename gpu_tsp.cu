@@ -1,36 +1,43 @@
 #include "file_io.c"
 #include "utils.c"
 #include <assert.h>
-
 //comment
 #define index(i,j,cities)((i*cities)+j)
-#define THREADS_X 16
-#define THREADS_Y 16
+#define THREADS_X 32
+#define THREADS_Y 32
 
-#define BLOCKS_X 32
-#define BLOCKS_Y 32
+#define BLOCKS_X 16
+#define BLOCKS_Y 16
 
 
+__constant__ float gpu_coordinates[16000];
 
 void tsp(float *distance, unsigned int cities);
 int main(int argc, char * argv[])
 {
 	if(argc != 4){
 		fprintf(stderr, "usage: tsp cities city_distance_file optimum_tour_file\n");
+		exit(0);
 	}
 	unsigned int cities = (unsigned int) atoi(argv[1]);
 
 	unsigned int distance_array_size = cities*cities*sizeof(float);
+	unsigned int coordinates_size = cities*2*sizeof(float);
 	FILE *fp=fopen(argv[2], "r");
 	FILE *fp_optimum=fopen(argv[3], "r");
 
-	float *distance = (float *)malloc(distance_array_size);
+	//WARN : this variable(distance) is not being used as of now
+	float *distance;
+	float *co_ordinates = (float *)malloc(coordinates_size);
 	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
-	read_files(fp, fp_optimum, distance, tour, cities);	
-	tsp(distance, cities);
+
+
+	read_files(fp, fp_optimum, distance, co_ordinates, tour, cities);
+	cudaMemcpyToSymbol(gpu_coordinates, co_ordinates, coordinates_size);
+	tsp(co_ordinates, cities);
 }
 
-__global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, int* min_index_array){
+__global__ void two_opt(unsigned int *cycle, unsigned int cities, float *min_val_array, int* min_index_array){
 	__shared__ float temp_min[THREADS_Y*THREADS_X];
 	__shared__ float temp_min_index[THREADS_Y*THREADS_X];
 	float min_val = FLT_MAX;
@@ -38,10 +45,10 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	float min_index = -1;
 	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + blockDim.x*gridDim.x){
 		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
-			temp_val = distance[cycle[i]*cities + cycle[j+1]];
-			temp_val += distance[cycle[i-1]*cities + cycle[j]];
-			temp_val -= distance[cycle[j]*cities + cycle[j+1]];
-			temp_val -= distance[cycle[i-1]*cities + cycle[i]];
+			temp_val = get_sq_root_dist(gpu_coordinates,cycle[i]*cities,cycle[j+1]);
+			temp_val = get_sq_root_dist(gpu_coordinates,cycle[i-1]*cities,cycle[j]);
+			temp_val = get_sq_root_dist(gpu_coordinates,cycle[j]*cities,cycle[j+1]);
+			temp_val = get_sq_root_dist(gpu_coordinates,cycle[i-1]*cities,cycle[i]);
 			if(temp_val < min_val && i < j){
 				min_val = temp_val;
 				min_index = i*cities+j;
@@ -73,19 +80,11 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 }
 
 
-void tsp(float *cpu_distance, unsigned int cities){
+void tsp(float *cpu_coordinates, unsigned int cities){
 
 	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
 	dim3 blockDim(THREADS_X, THREADS_Y);
-
-	//create and assign data to gpu distance array
-	unsigned int distance_size = cities*cities*sizeof(float);
-	float *gpu_distance;
 	int min_index;
-
-
-	CUDA_CALL(cudaMalloc(&gpu_distance, distance_size));
-	CUDA_CALL(cudaMemcpy(gpu_distance, cpu_distance, distance_size, cudaMemcpyHostToDevice));
 	
 	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
 	float *gpu_min_val;
@@ -107,9 +106,9 @@ void tsp(float *cpu_distance, unsigned int cities){
 		allocate_cycle(cpu_cycle, i, cities);
 
 		while(true){
-			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
+			float temp_cost = get_total_cost(cpu_cycle, cpu_coordinates, cities);
 			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, cities, gpu_min_val, gpu_min_index);
 
 			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));

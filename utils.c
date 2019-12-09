@@ -5,6 +5,7 @@
    assert(____rc == cudaSuccess);					\
 } while (0)
 
+#define get_sq_root_dist(co_ordinates, i, j)(sqrt((co_ordinates[2*i] - co_ordinates[2*j])*(co_ordinates[2*i] - co_ordinates[2*j])  +   (co_ordinates[(2*i)+1] - co_ordinates[(2*j)+1])*(co_ordinates[(2*i)+1] - co_ordinates[(2*j)+1])))
 void swap(unsigned int *cycle, int i, int j);
 void update_cycle(unsigned int *cycle, int i, int j);
 float get_total_cost(unsigned int *cycle, float *distance_array, unsigned int num_cities);
@@ -14,7 +15,7 @@ float get_total_cost(unsigned int *cycle, float *distance_array, unsigned int nu
 	int i = 0;
 	float total_cost = 0;
 	for(i = 1; i< num_cities+1; i++){
-		total_cost = total_cost + distance_array[index(cycle[i-1], cycle[i], num_cities)];
+		total_cost = total_cost + get_sq_root_dist(distance_array, cycle[i-1], cycle[i]);
 	}
 	return total_cost;
 
