@@ -4,11 +4,11 @@
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
-#define THREADS_X 16
-#define THREADS_Y 16
+#define THREADS_X 32
+#define THREADS_Y 32
 
-#define BLOCKS_X 32
-#define BLOCKS_Y 32
+#define BLOCKS_X 1
+#define BLOCKS_Y 1
 
 
 
@@ -30,14 +30,16 @@ int main(int argc, char * argv[])
 	tsp(distance, cities);
 }
 
-__global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, int* min_index_array){
+__global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *final_min_val){
 	__shared__ float temp_min[THREADS_Y*THREADS_X];
 	__shared__ float temp_min_index[THREADS_Y*THREADS_X];
 	float min_val = FLT_MAX;
 	float temp_val;
 	float min_index = -1;
-	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + blockDim.x*gridDim.x){
-		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
+	int i;
+	int j;
+	for(i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + blockDim.x*gridDim.x){
+		for(j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
 			temp_val = distance[cycle[i]*cities + cycle[j+1]];
 			temp_val += distance[cycle[i-1]*cities + cycle[j]];
 			temp_val -= distance[cycle[j]*cities + cycle[j+1]];
@@ -53,10 +55,8 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	//total threads in each block = blockDim.x*blockDim.y
 	//id of thread in block = threadIdx.x*blockDim.x + threadIdx.y
 	int tid =  threadIdx.x*blockDim.x + threadIdx.y;
-	int bid = blockIdx.x*gridDim.x + blockIdx.y;
-
-	temp_min[tid] = min_val;
 	temp_min_index[tid] = min_index;
+	temp_min[tid] = min_val;  
 
 	for(unsigned int stride = 1; stride < blockDim.x*blockDim.y; stride*=2){
 		__syncthreads();
@@ -67,9 +67,21 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 			}
 		}
 	}
-	
-	min_index_array[bid] = temp_min_index[0];
-	min_val_array[bid] = temp_min[0];
+	final_min_val[0] = temp_min[0];
+
+	int temp;
+	//only the first thread will do swaps
+	if(tid == 0){
+		i = temp_min_index[0]/cities;
+		j = temp_min_index[0]%cities;
+		while(i < j){
+			temp = cycle[i];
+			cycle[i] = cycle[j];
+			cycle[j] = temp;
+			i++;
+			j--;
+		}
+	}
 }
 
 
@@ -81,20 +93,13 @@ void tsp(float *cpu_distance, unsigned int cities){
 	//create and assign data to gpu distance array
 	unsigned int distance_size = cities*cities*sizeof(float);
 	float *gpu_distance;
-	int min_index;
-
 
 	CUDA_CALL(cudaMalloc(&gpu_distance, distance_size));
 	CUDA_CALL(cudaMemcpy(gpu_distance, cpu_distance, distance_size, cudaMemcpyHostToDevice));
 	
-	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
+	float *cpu_min_val = (float *)malloc(sizeof(float));
 	float *gpu_min_val;
-	CUDA_CALL(cudaMalloc(&gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float)));
-
-	int *cpu_min_index = (int *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(int));
-	int *gpu_min_index;
-	CUDA_CALL(cudaMalloc(&gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(int)));
-	
+	CUDA_CALL(cudaMalloc(&gpu_min_val, sizeof(float)));
 
 	unsigned int cycle_size = (cities+1)*sizeof(unsigned int);
 	unsigned int *cpu_cycle = (unsigned int *)malloc(cycle_size);
@@ -103,30 +108,25 @@ void tsp(float *cpu_distance, unsigned int cities){
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
 	float global_minima = FLT_MAX;
+	float local_minima = FLT_MAX;
 	for(int i = 0; i< cities; i++){
 		allocate_cycle(cpu_cycle, i, cities);
-
+		CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
 		while(true){
-			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
-
-			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
+			// float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val);
+			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, sizeof(float), cudaMemcpyDeviceToHost));
+			// CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
 			//2-opt costs have been calculated
 
-			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-			if(cpu_min_val[min_index] >= -0.01){
-				if(global_minima > temp_cost){
-					global_minima = temp_cost;
+			if(cpu_min_val[0] >= -0.01){
+				CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
+				local_minima = get_total_cost(cpu_cycle, cpu_distance, cities);
+				if(global_minima > local_minima){
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
 				}
 				break;
-			}
-			else{
-				int min_agg_index = cpu_min_index[min_index];
-				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
 			}
 		}
 	}
