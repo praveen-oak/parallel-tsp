@@ -5,11 +5,11 @@
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
-#define THREADS_X 32
-#define THREADS_Y 32
+#define THREADS_X 16
+#define THREADS_Y 16
 
-#define BLOCKS_X 32
-#define BLOCKS_Y 32
+#define BLOCKS_X 16
+#define BLOCKS_Y 16
 
 int devices = 0;
 struct arg_struct {
@@ -88,10 +88,7 @@ __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int citie
 	float min_index = -1;
 	for(int i = blockIdx.x*blockDim.x + threadIdx.x+1; i < cities; i = i + blockDim.x*gridDim.x){
 		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
-			temp_val = distance[cycle[i]*cities + cycle[j+1]];
-			temp_val += distance[cycle[i-1]*cities + cycle[j]];
-			temp_val -= distance[cycle[j]*cities + cycle[j+1]];
-			temp_val -= distance[cycle[i-1]*cities + cycle[i]];
+			temp_val = distance[cycle[i]*cities + cycle[j+1]]+distance[cycle[i-1]*cities + cycle[j]]-distance[cycle[j]*cities + cycle[j+1]]-distance[cycle[i-1]*cities + cycle[i]];
 			if(temp_val < min_val && i < j){
 				min_val = temp_val;
 				min_index = i*cities+j;
@@ -166,7 +163,7 @@ void *tsp(void *arguments){
 			cudaDeviceSynchronize();
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-			if(cpu_min_val[min_index] >= -0.001){
+			if(cpu_min_val[min_index] >= -.1){
 				if(global_minima > temp_cost){
 					global_minima = temp_cost;
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
