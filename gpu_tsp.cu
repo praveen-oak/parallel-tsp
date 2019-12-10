@@ -42,7 +42,7 @@ int main(int argc, char * argv[])
 	pthread_t stream_threads[8];
 
 	CUDA_CALL(cudaGetDeviceCount (&devices));
-	int devices = 1;
+	// int devices = 1;
 	float *gpu_distance;
 
 
@@ -84,12 +84,17 @@ int main(int argc, char * argv[])
 __global__ void gpu_swap(unsigned int *cycle, int i, int j){
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	int temp;
-	
-	for(int k = 0; k <= (j-i)/2; k = k + blockDim.x){
-		temp = cycle[i+tid+k];
-		cycle[i+tid+k] = cycle[j-(tid+k)];
-		cycle[j-(tid+k)] = temp;
+		
+	if(tid <= (j-i)/2){
+		temp = cycle[i+tid];
+		cycle[i+tid] = cycle[j-tid];
+		cycle[j-tid] = temp;
 	}
+	// for(int k = 0; k <= (j-i)/2; k = k + blockDim.x*gridDim.x){
+	// 	temp = cycle[i+tid+k];
+	// 	cycle[i+tid+k] = cycle[j-(tid+k)];
+	// 	cycle[j-(tid+k)] = temp;
+	// }
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, unsigned int* min_index_array){
@@ -165,7 +170,7 @@ void *tsp(void *arguments){
 	unsigned int *gpu_cycle;
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
-
+	float temp_cost;
 	float global_minima = FLT_MAX;
 	for(int i = device_index; i < cities; i = i + devices){
 
@@ -180,7 +185,7 @@ void *tsp(void *arguments){
 			cudaDeviceSynchronize();
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
-			if(cpu_min_val[min_index] >= -0.001){
+			if(cpu_min_val[min_index] >= -0.01){
 				CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
 				temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
 				if(global_minima > temp_cost){
@@ -190,7 +195,7 @@ void *tsp(void *arguments){
 				break;
 			}
 			else{
-				gpu_swap<<<1,1>>>(gpu_cycle, cpu_min_index[min_index]/cities, cpu_min_index[min_index]%cities);
+				gpu_swap<<<1,1024>>>(gpu_cycle, cpu_min_index[min_index]/cities, cpu_min_index[min_index]%cities);
 			}
 		}
 	}
