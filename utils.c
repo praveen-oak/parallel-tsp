@@ -14,11 +14,12 @@ float get_total_cost(unsigned int *cycle, float *distance_array, unsigned int nu
 	int i = 0;
 	float total_cost = 0;
 	for(i = 1; i< num_cities+1; i++){
-		total_cost = total_cost + distance_array[index(cycle[i-1], cycle[i], num_cities)];
+		total_cost = total_cost + distance_array[cycle[i-1]*num_cities+cycle[i]];
 	}
 	return total_cost;
 
 }
+
 
 void allocate_cycle(unsigned int *cycle, unsigned int start, unsigned int cities){
 	int j;
@@ -26,6 +27,14 @@ void allocate_cycle(unsigned int *cycle, unsigned int start, unsigned int cities
 		cycle[j] = (j+start)%cities;
 	}
 	cycle[cities] = start;
+}
+
+void print_cycle(unsigned int *cycle, unsigned int cities){
+	int j;
+	for(j = 0; j < cities; j++){
+		printf("%d ",cycle[j]);
+	}
+	printf("\n");
 }
 
 void swap(unsigned int *cycle, int i, int j){

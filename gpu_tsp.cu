@@ -42,6 +42,7 @@ int main(int argc, char * argv[])
 	pthread_t stream_threads[8];
 
 	CUDA_CALL(cudaGetDeviceCount (&devices));
+	int devices = 1;
 	float *gpu_distance;
 
 
@@ -78,6 +79,17 @@ int main(int argc, char * argv[])
 	free(tour);
 	cudaFree(gpu_distance);
 
+}
+
+__global__ void gpu_swap(unsigned int *cycle, int i, int j){
+	int tid = blockIdx.x*blockDim.x + threadIdx.x;
+	int temp;
+	
+	for(int k = 0; k <= (j-i)/2; k = k + blockDim.x){
+		temp = cycle[i+tid+k];
+		cycle[i+tid+k] = cycle[j-(tid+k)];
+		cycle[j-(tid+k)] = temp;
+	}
 }
 
 __global__ void two_opt(unsigned int *cycle, float *distance, unsigned int cities, float *min_val_array, unsigned int* min_index_array){
@@ -136,6 +148,7 @@ void *tsp(void *arguments){
 
 	dim3 gridDim(BLOCKS_X, BLOCKS_Y);
 	dim3 blockDim(THREADS_X, THREADS_Y);
+	
 	int min_index;
 	float *cpu_min_val = (float *)malloc(BLOCKS_X*BLOCKS_Y*sizeof(float));
 	float *gpu_min_val;
@@ -152,21 +165,24 @@ void *tsp(void *arguments){
 	unsigned int *gpu_cycle;
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
+
 	float global_minima = FLT_MAX;
 	for(int i = device_index; i < cities; i = i + devices){
+
 		allocate_cycle(cpu_cycle, i, cities);
+		CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
 
 		while(true){
-			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
+			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
 			cudaDeviceSynchronize();
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
 			if(cpu_min_val[min_index] >= -0.001){
+				CUDA_CALL(cudaMemcpy(cpu_cycle, gpu_cycle, cycle_size, cudaMemcpyDeviceToHost));
+				temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
 				if(global_minima > temp_cost){
 					global_minima = temp_cost;
 					memcpy(global_optimal_cycle, cpu_cycle, cycle_size);
@@ -174,8 +190,7 @@ void *tsp(void *arguments){
 				break;
 			}
 			else{
-				int min_agg_index = cpu_min_index[min_index];
-				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
+				gpu_swap<<<1,1>>>(gpu_cycle, cpu_min_index[min_index]/cities, cpu_min_index[min_index]%cities);
 			}
 		}
 	}

@@ -116,11 +116,3 @@ void print_min_cost(float *cost_array, unsigned int cities){
 		printf("\n");
 	}
 }
-
-void print_cycle(unsigned int *cycle, unsigned int cities){
-	int i;
-	for(i = 0; i < cities+1; i++){
-		printf("%d ",cycle[i]);
-	}
-	printf("\n");
-}
