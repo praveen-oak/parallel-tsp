@@ -44,7 +44,6 @@ int main(int argc, char * argv[])
 	CUDA_CALL(cudaGetDeviceCount (&devices));
 	float *gpu_distance;
 
-
 	for(int i = 0; i < devices; i++){
 
 		CUDA_CALL(cudaSetDevice(i));
@@ -149,18 +148,26 @@ void *tsp(void *arguments){
 	unsigned int *gpu_cycle;
 	CUDA_CALL(cudaMalloc(&gpu_cycle, cycle_size));
 
+	const int num_streams = 8;
+  	cudaStream_t streams[num_streams];
+  	cudaStream_t current_stream;
+  	int stream_index = 0;
+  	for (int i = 0; i < num_streams; i++) {
+    	cudaStreamCreate(&streams[i]);
+  	}
+
 	float global_minima = FLT_MAX;
 	for(int i = device_index; i < cities; i = i + devices){
 		allocate_cycle(cpu_cycle, i, cities);
-
+		current_stream = streams[stream_index%num_streams];
 		while(true){
 			float temp_cost = get_total_cost(cpu_cycle, cpu_distance, cities);
-			CUDA_CALL(cudaMemcpy(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice));
-			two_opt<<<gridDim, blockDim>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
+			CUDA_CALL(cudaMemcpyAsync(gpu_cycle, cpu_cycle, cycle_size, cudaMemcpyHostToDevice, current_stream));
+			two_opt<<<gridDim, blockDim, 0, current_stream>>>(gpu_cycle, gpu_distance, cities, gpu_min_val, gpu_min_index);
 
-			CUDA_CALL(cudaMemcpy(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-			CUDA_CALL(cudaMemcpy(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost));
-			cudaDeviceSynchronize();
+			CUDA_CALL(cudaMemcpyAsync(cpu_min_val, gpu_min_val, BLOCKS_X*BLOCKS_Y*sizeof(float), cudaMemcpyDeviceToHost,current_stream));
+			CUDA_CALL(cudaMemcpyAsync(cpu_min_index, gpu_min_index, BLOCKS_X*BLOCKS_Y*sizeof(int), cudaMemcpyDeviceToHost,current_stream));
+			cudaStreamSynchronize(current_stream);
 
 			min_index = get_min_val(cpu_min_val,BLOCKS_X*BLOCKS_Y);
 			if(cpu_min_val[min_index] >= -.1){
@@ -175,6 +182,7 @@ void *tsp(void *arguments){
 				update_cycle(cpu_cycle, min_agg_index/cities, min_agg_index%cities);
 			}
 		}
+		stream_index++;
 	}
 	return_pointer[0] = global_minima;
 

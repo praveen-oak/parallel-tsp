@@ -31,7 +31,7 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
 	// float *distance = (float *)malloc(cities*cities*sizeof(float));
 	get_distances(distance, x_coordinate, y_coordinate, cities);
 	
-	if(fp == NULL){
+	if(fp_optimum == NULL){
       fprintf(stderr, "Error in opening optimum file");
       exit(1);
    	}
