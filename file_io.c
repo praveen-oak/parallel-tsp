@@ -15,11 +15,11 @@ void read_data(unsigned int cities, float *x_coordinate, float *y_coordinate, FI
 void read_line(char *line, int index, float *x_coordinate, float *y_coordinate);
 void get_distances(float *distance, float *x_coordinate, float *y_coordinate, unsigned int cities);
 void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities);
-void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour, unsigned int cities);
+void read_files(FILE *fp, float *distance, unsigned int *tour, unsigned int cities);
 
 
 
-void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour, unsigned int cities){
+void read_files(FILE *fp,float *distance, unsigned int *tour, unsigned int cities){
 
 	float *x_coordinate = (float *)malloc(cities*sizeof(float));
 	float *y_coordinate = (float *)malloc(cities*sizeof(float));
@@ -30,13 +30,6 @@ void read_files(FILE *fp, FILE *fp_optimum, float *distance, unsigned int *tour,
 	read_data(cities, x_coordinate, y_coordinate, fp);
 	// float *distance = (float *)malloc(cities*cities*sizeof(float));
 	get_distances(distance, x_coordinate, y_coordinate, cities);
-	
-	if(fp_optimum == NULL){
-      fprintf(stderr, "Error in opening optimum file");
-      exit(1);
-   	}
-   	// unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
-   	// read_optimum_file(fp_optimum, tour, cities);
 }
 
 void read_optimum_file(FILE *fp, unsigned int *tour, unsigned int cities){

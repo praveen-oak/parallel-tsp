@@ -29,20 +29,18 @@ void *tsp(void *arguements);
 int main(int argc, char * argv[])
 {
 	if(argc != 4){
-		fprintf(stderr, "usage: tsp cities city_distance_file optimum_tour_file\n");
+		fprintf(stderr, "usage: gpu_tsp cities max_devices city_distance_file\n");
 	}
 	unsigned int cities = (unsigned int) atoi(argv[1]);
-
+	unsigned int suggested_devices = (unsigned int) atoi(argv[2]);
 	unsigned int distance_array_size = cities*cities*sizeof(float);
-	FILE *fp=fopen(argv[2], "r");
-	FILE *fp_optimum=fopen(argv[3], "r");
+	FILE *fp=fopen(argv[3], "r");
 
 	//read the data from the file
 	float *distance = (float *)malloc(distance_array_size);
 	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
-	read_files(fp, fp_optimum, distance, tour, cities);	
+	read_files(fp, distance, tour, cities);	
 	fclose(fp);
-	fclose(fp_optimum);
 
 	//create thread structures
 	struct arg_struct args[8];
@@ -52,9 +50,14 @@ int main(int argc, char * argv[])
 	CUDA_CALL(cudaGetDeviceCount (&devices));
 	float *gpu_distance;
 
-	//use multiple devices only if problem size warrants it
-	if(cities < 200){
-		devices = 1;
+	//if suggested devices is lesser than max devices available, then change it
+	if(suggested_devices < devices){
+		devices = suggested_devices;
+	}
+
+	//we are using a max of 8 pthreads, and each pthread is mapped to a device, so code can accomadate a max of 8 devices
+	if(devices > 8){
+		devices = 8;
 	}
 
 	struct timespec start, end;
