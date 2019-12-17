@@ -47,8 +47,8 @@ __global__ void two_opt(unsigned int *cycle, unsigned int cities, float *min_val
 		for(int j = blockIdx.y*blockDim.y + threadIdx.y+1; j < cities; j = j + blockDim.y*gridDim.y){
 			temp_val = get_sq_root_dist(gpu_coordinates,cycle[i]*cities,cycle[j+1]);
 			temp_val += get_sq_root_dist(gpu_coordinates,cycle[i-1]*cities,cycle[j]);
-			temp_val += get_sq_root_dist(gpu_coordinates,cycle[j]*cities,cycle[j+1]);
-			temp_val += get_sq_root_dist(gpu_coordinates,cycle[i-1]*cities,cycle[i]);
+			temp_val -= get_sq_root_dist(gpu_coordinates,cycle[j]*cities,cycle[j+1]);
+			temp_val -= get_sq_root_dist(gpu_coordinates,cycle[i-1]*cities,cycle[i]);
 			if(temp_val < min_val && i < j){
 				min_val = temp_val;
 				min_index = i*cities+j;
@@ -74,9 +74,11 @@ __global__ void two_opt(unsigned int *cycle, unsigned int cities, float *min_val
 			}
 		}
 	}
+	if(tid == 0){
+		min_index_array[bid] = temp_min_index[0];
+		min_val_array[bid] = temp_min[0];
+	}
 	
-	min_index_array[bid] = temp_min_index[0];
-	min_val_array[bid] = temp_min[0];
 }
 
 
