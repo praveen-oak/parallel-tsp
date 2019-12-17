@@ -63,7 +63,6 @@ int main(int argc, char * argv[])
 		
 		CUDA_CALL(cudaMalloc(&gpu_distance, distance_array_size));
 		CUDA_CALL(cudaMemcpy(gpu_distance, distance, distance_array_size, cudaMemcpyHostToDevice));
-		cudaDeviceSynchronize();
 
 		args[i].cpu_distance = distance;
 		args[i].cities = cities;
