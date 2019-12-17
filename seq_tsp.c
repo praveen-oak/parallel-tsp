@@ -5,6 +5,7 @@
 #include <float.h>
 #include <string.h>
 #include <math.h>
+#include <time.h> 
 
 //comment
 #define index(i,j,cities)((i*cities)+j)
@@ -28,11 +29,15 @@ int main(int argc, char * argv[])
 		fprintf(stderr, "usage: tsp cities city_distance_file optimum_tour_file\n");
 	}
 	unsigned int cities = (unsigned int) atoi(argv[1]);
+
+	
+
 	FILE *fp=fopen(argv[2], "r");
 	FILE *fp_optimum=fopen(argv[3], "r");
 	float *distance = (float *)malloc(cities*cities*sizeof(float));
 	unsigned int *tour = (unsigned int *)malloc((cities+1)*sizeof(unsigned int *));
 	read_files(fp, fp_optimum, distance, tour, cities);
+
 	tsp_util(cities, distance, tour);
 
 }
@@ -158,6 +163,11 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 	unsigned int *min_cycle = (unsigned int *)malloc((num_cities+1)*sizeof(unsigned int));
 	int i, j, c, k;
 	float global_min_tour = FLT_MAX, temp, local_min_tour; 
+
+	struct timespec start, end;
+	double time_usec = 0.0;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	for(j = 0; j < num_cities; j++){
 		k=0;
 		while(k < num_cities){
@@ -168,7 +178,7 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 		local_min_tour = get_total_cost(cycle, distances, num_cities);
 		while(1){
 			temp = two_opt(cycle, distances, num_cities, local_min_tour);
-			if(temp +1 >= local_min_tour){
+			if(temp +.1 >= local_min_tour){
 				break;
 			}else{
 				local_min_tour = temp;
@@ -181,6 +191,10 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 			}
 		}
 	}
+
+	clock_gettime(CLOCK_MONOTONIC,&end);
+	time_usec = (((double)end.tv_sec*1000 + (double)end.tv_nsec/1000000)-((double)start.tv_sec*1000 + (double)start.tv_nsec/1000000));
+	printf("Time taken  = %lf milliseconds\n",time_usec);
 
 	float optimal_cost = get_total_cost(optimal_tour, distances, num_cities);
 	printf("Optimal cost: %f\n", optimal_cost);

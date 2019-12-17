@@ -2,6 +2,7 @@
 #include "utils.c"
 #include <assert.h>
 #include <pthread.h>
+#include <time.h> 
 
 #define THREADS_X 16
 #define THREADS_Y 16
@@ -56,6 +57,10 @@ int main(int argc, char * argv[])
 		devices = 1;
 	}
 
+	struct timespec start, end;
+	double time_usec = 0.0;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	//run a thread for each device
 	for(int i = 0; i < devices; i++){
 
@@ -88,7 +93,10 @@ int main(int argc, char * argv[])
 			min_val = args[i].return_pointer[0];
 		}
 	}
+	clock_gettime(CLOCK_MONOTONIC,&end);
+	time_usec = (((double)end.tv_sec*1000 + (double)end.tv_nsec/1000000)-((double)start.tv_sec*1000 + (double)start.tv_nsec/1000000));
 
+	printf("Time taken = %lf milliseconds\n",time_usec);
 
 	printf("Global minimum value is %f\n",min_val);
 	free(distance);
