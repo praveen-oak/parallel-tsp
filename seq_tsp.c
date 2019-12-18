@@ -199,8 +199,6 @@ void tsp_util(int num_cities, float* distances, unsigned int* optimal_tour){
 	float optimal_cost = get_total_cost(optimal_tour, distances, num_cities);
 	printf("Optimal cost: %f\n", optimal_cost);
 	printf("Solution cost: %f\n", global_min_tour);
-	float accuracy = error_from_optimal(distances,min_cycle,optimal_tour, num_cities);
-	printf("Accuracy: %f\n", accuracy);
 }
 
 
