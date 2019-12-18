@@ -68,4 +68,4 @@ a666_optimum --> File containing the optimal tour.
 Results:\
 The CPU program outputs the exact time in milliseconds the TSP part took, along with the cost of the solution tour and cost of the most optimal solution that exists for that dataset.
 
-The CPU program outputs the exact time in milliseconds the TSP part took, along with the cost of the solution tour.
+The GPU program outputs the exact time in milliseconds the TSP part took, along with the cost of the solution tour.
