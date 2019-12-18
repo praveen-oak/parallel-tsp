@@ -26,6 +26,8 @@ For GPU\
 Eg:\
 ./gpu_tsp 16 20 data/a16
 
+If you want the program to dynamically set the number of devices based on the size of problem, then set the suggested cities to 0
+
 Note : \
 Number of suggested devices is only a directive. The code detects the number of devices on the system and changes this accordingly.\
 If the system has only 2 GPUs and input is to use 4, only 2 will be used\

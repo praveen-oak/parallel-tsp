@@ -33,6 +33,11 @@ int main(int argc, char * argv[])
 	}
 	unsigned int cities = (unsigned int) atoi(argv[1]);
 	unsigned int suggested_devices = (unsigned int) atoi(argv[2]);
+
+	if(suggested_devices == 0){
+		suggested_devices = cities/100;
+	}
+
 	unsigned int distance_array_size = cities*cities*sizeof(float);
 	FILE *fp=fopen(argv[3], "r");
 
